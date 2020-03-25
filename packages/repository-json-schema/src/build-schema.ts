@@ -38,6 +38,33 @@ export interface JsonSchemaOptions<T extends object> {
    * Set this flag to mark all model properties as optional. This is typically
    * used to describe request body of PATCH endpoints. This option will be
    * overridden by the "optional" option if it is set and non-empty.
+   *
+   * The flag also applies to nested model instances, such as:
+   *
+   * @example
+   * ```ts
+   * @model()
+   * class Address {
+   *  @property()
+   *  street: string;
+   *  @property()
+   *  city: string;
+   *  @property()
+   *  state: string;
+   *  @property()
+   *  zipCode: string;
+   * }
+   *
+   * @model()
+   * class Customer {
+   *   @property()
+   *   address: Address;
+   * }
+   *
+   * // The following schema allows properties of `customer` and
+   * // `customer.address` optional
+   * const schemaRef = getModelSchemaRef(Customer, {partial: true});
+   * ```
    */
   partial?: boolean;
 
@@ -436,7 +463,20 @@ export function modelToJsonSchema<T extends object>(
 
     const propSchema = getJsonSchema(referenceType, options);
 
-    includeReferencedSchema(referenceType.name, propSchema);
+    // JSONSchema6Definition allows both boolean and JSONSchema6 types
+    if (typeof result.properties[p] !== 'boolean') {
+      const prop = result.properties[p] as JSONSchema;
+      const propTitle = propSchema.title ?? referenceType.name;
+      const targetRef = {$ref: `#/definitions/${propTitle}`};
+
+      if (prop.type === 'array' && prop.items) {
+        // Update $ref for array type
+        prop.items = targetRef;
+      } else {
+        result.properties[p] = targetRef;
+      }
+      includeReferencedSchema(propTitle, propSchema);
+    }
   }
 
   result.additionalProperties = meta.settings.strict === false;
